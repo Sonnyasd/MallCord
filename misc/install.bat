@@ -61,7 +61,7 @@ if !CHOICE! equ 4 goto :end
 if !CHOICE! equ 3 goto :uninstall
 if !CHOICE! equ 2 goto :check_update
 
-:: Install / Update
+:: ===================== INSTALL / UPDATE =====================
 call :check_admin
 call :close_discord
 
@@ -109,10 +109,20 @@ if exist "%INSTALL_DIR%\.git" (
 )
 
 echo %BLUE%Installing dependencies...%RESET%
-call pnpm install --frozen-lockfile
+call pnpm install --no-frozen-lockfile
+if %errorlevel% neq 0 (
+    echo %RED%ERROR:%RESET% Failed to install dependencies.
+    pause
+    goto :end
+)
 
-echo %BLUE%Building...%RESET%
+echo %BLUE%Building Private MallCord...%RESET%
 call pnpm build
+if %errorlevel% neq 0 (
+    echo %RED%ERROR:%RESET% Build failed.
+    pause
+    goto :end
+)
 
 echo %BLUE%Injecting into Discord...%RESET%
 call node "%INSTALL_DIR%\scripts\runInstaller.mjs" -- --install
@@ -125,6 +135,7 @@ echo %GREEN%========================================%RESET%
 pause
 goto :end
 
+:: ===================== CHECK FOR UPDATES =====================
 :check_update
 if not exist "%INSTALL_DIR%\.git" (
     echo %RED%Private MallCord is not installed yet.%RESET%
@@ -140,7 +151,7 @@ choice /C YN /M "   Update now?"
 if !errorlevel! equ 1 (
     call :close_discord
     git reset --hard origin/main
-    call pnpm install --frozen-lockfile
+    call pnpm install --no-frozen-lockfile
     call pnpm build
     call node "%INSTALL_DIR%\scripts\runInstaller.mjs" -- --install
     echo %GREEN%Update completed successfully!%RESET%
@@ -148,6 +159,7 @@ if !errorlevel! equ 1 (
 pause
 goto :end
 
+:: ===================== UNINSTALL =====================
 :uninstall
 if not exist "%INSTALL_DIR%" (
     echo %RED%Private MallCord not found.%RESET%
