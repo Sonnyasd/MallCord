@@ -1,213 +1,174 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal EnableDelayedExpansion
+chcp 65001 >nul 2>&1
 
-:: Private MallCord installer / uninstaller
-:: Run as a normal user (NOT as Administrator).
+:: ================================================
+:: Private MallCord Installer
+:: ================================================
 
-set REPO_URL=https://github.com/Sonnyasd/MallCord
-set INSTALL_DIR=%USERPROFILE%\PrivateMallCord
+set "REPO_URL=https://github.com/Sonnyasd/MallCord"
+set "INSTALL_DIR=%USERPROFILE%\PrivateMallCord"
 
+:: ANSI Colors
+set "ESC=["
+set "RED=%ESC%91m"
+set "GREEN=%ESC%92m"
+set "YELLOW=%ESC%93m"
+set "BLUE=%ESC%94m"
+set "CYAN=%ESC%96m"
+set "RESET=%ESC%0m"
+
+:print_header
+cls
 echo.
-echo   +---------------------------------+
-echo   ^|     Private MallCord Setup     ^|
-echo   +---------------------------------+
+echo %CYAN%╔══════════════════════════════════════════════════════════════╗%RESET%
+echo %CYAN%║%RESET%                 %GREEN%Private MallCord Setup%RESET%                 %CYAN%║%RESET%
+echo %CYAN%╚══════════════════════════════════════════════════════════════╝%RESET%
 echo.
+goto :eof
 
-:: ── Mode selection ────────────────────────────────────────────────────────────
-echo   What would you like to do?
-echo   [1] Install / Update Private MallCord
-echo   [2] Uninstall Private MallCord
-echo.
-choice /C 12 /M "   Choose an option"
-set MODE_CHOICE=!errorlevel!
-echo.
-
-:: ── Warn if running as administrator ─────────────────────────────────────────
+:check_admin
 net session >nul 2>&1
 if !errorlevel! equ 0 (
-    echo   WARNING: You are running as Administrator.
-    echo            This can break Discord. Run as a normal user instead.
-    echo.
-    choice /C YN /M "   Continue anyway"
-    set ADMIN_CHOICE=!errorlevel!
-    echo.
-    if !ADMIN_CHOICE! equ 2 (
-        echo   Cancelled.
-        goto :end
-    )
+    echo %YELLOW%WARNING:%RESET% You are running as Administrator. This may break Discord.
+    choice /C YN /M "   Continue anyway?"
+    if !errorlevel! equ 2 exit /b 1
 )
+goto :eof
 
-if !MODE_CHOICE! equ 2 goto :uninstall
+:close_discord
+echo %BLUE%Closing Discord processes...%RESET%
+taskkill /F /IM Discord.exe >nul 2>&1
+taskkill /F /IM DiscordPTB.exe >nul 2>&1
+taskkill /F /IM DiscordCanary.exe >nul 2>&1
+timeout /t 2 /nobreak >nul
+goto :eof
 
-:: ════════════════════════════════════════════════════════════
-::  INSTALL
-:: ════════════════════════════════════════════════════════════
+call :print_header
 
-:: ── Check git ─────────────────────────────────────────────────────────────────
+echo   %CYAN%What would you like to do?%RESET%
+echo.
+echo   %GREEN%[1]%RESET% Install / Update
+echo   %GREEN%[2]%RESET% Check for Updates
+echo   %GREEN%[3]%RESET% Uninstall
+echo   %GREEN%[4]%RESET% Exit
+echo.
+choice /C 1234 /M "   Choose an option"
+
+set "CHOICE=!errorlevel!"
+
+if !CHOICE! equ 4 goto :end
+if !CHOICE! equ 3 goto :uninstall
+if !CHOICE! equ 2 goto :check_update
+
+:: Install / Update
+call :check_admin
+call :close_discord
+
 where git >nul 2>&1
 if %errorlevel% neq 0 (
-    echo   ERROR: git not found.
-    echo          Install it from https://git-scm.com/download/win then re-run.
-    goto :fail
+    echo %RED%ERROR:%RESET% Git not found. Install from: https://git-scm.com/download/win
+    pause
+    goto :end
 )
-for /f "tokens=3" %%v in ('git --version 2^>nul') do echo   [OK] git %%v
 
-:: ── Check Node.js ─────────────────────────────────────────────────────────────
 where node >nul 2>&1
 if %errorlevel% neq 0 (
-    echo   ERROR: Node.js not found.
-    echo          Install LTS from https://nodejs.org then re-run.
-    goto :fail
+    echo %RED%ERROR:%RESET% Node.js not found. Install LTS from https://nodejs.org
+    pause
+    goto :end
 )
 
 node -e "if(parseInt(process.version.slice(1))<18)process.exit(1)" >nul 2>&1
 if %errorlevel% neq 0 (
-    for /f "tokens=*" %%v in ('node --version 2^>nul') do (
-        echo   ERROR: Node.js v18+ required. You have %%v.
-    )
-    echo          Update at https://nodejs.org
-    goto :fail
+    echo %RED%ERROR:%RESET% Node.js v18 or higher required.
+    pause
+    goto :end
 )
-for /f "tokens=*" %%v in ('node --version 2^>nul') do echo   [OK] Node.js %%v
 
-:: ── Check / install pnpm ──────────────────────────────────────────────────────
 where pnpm >nul 2>&1
 if %errorlevel% neq 0 (
-    echo   ! pnpm not found. Installing globally via npm...
+    echo %YELLOW%pnpm not found. Installing...%RESET%
     call npm install -g pnpm
-    if %errorlevel% neq 0 (
-        echo   ERROR: Failed to install pnpm.
-        goto :fail
-    )
-    for /f "tokens=*" %%p in ('npm config get prefix 2^>nul') do set PATH=%%p;!PATH!
-    where pnpm >nul 2>&1
-    if %errorlevel% neq 0 (
-        echo   ERROR: pnpm was installed but is not in PATH.
-        echo          Close this window, open a new Command Prompt, and re-run.
-        goto :fail
-    )
 )
-for /f "tokens=*" %%v in ('pnpm --version 2^>nul') do echo   [OK] pnpm %%v
 
-:: ── Clone / update ────────────────────────────────────────────────────────────
-echo.
+echo %BLUE%Cloning / Updating repository...%RESET%
 if exist "%INSTALL_DIR%\.git" (
-    echo   Private MallCord already found at %INSTALL_DIR%
-    choice /C YN /M "   Update to the latest version"
-    set UPDATE_CHOICE=!errorlevel!
-    echo.
-    if !UPDATE_CHOICE! equ 1 (
-        echo   Pulling latest changes...
-        git -C "%INSTALL_DIR%" pull --ff-only
-        if %errorlevel% neq 0 (
-            echo   ERROR: git pull failed.
-            echo          Try deleting %INSTALL_DIR% and re-running.
-            goto :fail
-        )
-        echo   [OK] Repository updated.
-    ) else (
-        echo   Skipping update — using existing checkout.
-    )
-) else if exist "%INSTALL_DIR%" (
-    echo   ERROR: %INSTALL_DIR% exists but is not a git repository.
-    echo          Delete it and re-run.
-    goto :fail
+    cd /d "%INSTALL_DIR%"
+    git fetch origin main
+    git reset --hard origin/main
 ) else (
-    echo   Cloning Private MallCord into %INSTALL_DIR%...
+    if exist "%INSTALL_DIR%" rmdir /s /q "%INSTALL_DIR%"
     git clone "%REPO_URL%" "%INSTALL_DIR%"
     if %errorlevel% neq 0 (
-        echo   ERROR: Clone failed. Check your internet connection.
-        goto :fail
+        echo %RED%ERROR:%RESET% Clone failed.
+        pause
+        goto :end
     )
-    echo   [OK] Cloned.
+    cd /d "%INSTALL_DIR%"
 )
 
-cd /d "%INSTALL_DIR%"
-if %errorlevel% neq 0 (
-    echo   ERROR: Could not enter %INSTALL_DIR%.
-    goto :fail
-)
+echo %BLUE%Installing dependencies...%RESET%
+call pnpm install --frozen-lockfile
 
-:: ── Install dependencies ──────────────────────────────────────────────────────
-echo.
-echo   Installing dependencies (this may take a minute)...
-call pnpm --dir "%INSTALL_DIR%" install --frozen-lockfile
-if %errorlevel% neq 0 (
-    echo   ERROR: pnpm install failed. See output above.
-    goto :fail
-)
-echo   [OK] Dependencies installed.
+echo %BLUE%Building...%RESET%
+call pnpm build
 
-:: ── Build ─────────────────────────────────────────────────────────────────────
-echo.
-echo   Building Private MallCord...
-call pnpm --dir "%INSTALL_DIR%" build
-if %errorlevel% neq 0 (
-    echo   ERROR: Build failed. See output above.
-    goto :fail
-)
-echo   [OK] Build complete.
-
-:: ── Inject ────────────────────────────────────────────────────────────────────
-echo.
-echo   Injecting into Discord...
+echo %BLUE%Injecting into Discord...%RESET%
 call node "%INSTALL_DIR%\scripts\runInstaller.mjs" -- --install
-if %errorlevel% neq 0 (
-    echo   ERROR: Injection failed. Make sure Discord is installed.
-    goto :fail
-)
 
 echo.
-echo   ============================================
-echo     Private MallCord installed! Start Discord to load it.
-echo   ============================================
-echo.
+echo %GREEN%========================================%RESET%
+echo %GREEN%   Private MallCord installed successfully!%RESET%
+echo %GREEN%   Start Discord to load it.%RESET%
+echo %GREEN%========================================%RESET%
+pause
 goto :end
 
-:: ════════════════════════════════════════════════════════════
-::  UNINSTALL
-:: ════════════════════════════════════════════════════════════
-:uninstall
-
+:check_update
 if not exist "%INSTALL_DIR%\.git" (
-    echo   ERROR: Private MallCord not found at %INSTALL_DIR%. Nothing to uninstall.
-    goto :fail
+    echo %RED%Private MallCord is not installed yet.%RESET%
+    pause
+    goto :end
 )
-
-echo   Found Private MallCord at %INSTALL_DIR%.
+cd /d "%INSTALL_DIR%"
+echo %BLUE%Checking for updates...%RESET%
+git fetch origin main
+git log HEAD..origin/main --oneline
 echo.
-
-echo   Removing Private MallCord from Discord...
-call node "%INSTALL_DIR%\scripts\runInstaller.mjs" -- --uninstall
-if %errorlevel% neq 0 (
-    echo   WARNING: Uninject step reported an error. Discord may already be uninjected.
+choice /C YN /M "   Update now?"
+if !errorlevel! equ 1 (
+    call :close_discord
+    git reset --hard origin/main
+    call pnpm install --frozen-lockfile
+    call pnpm build
+    call node "%INSTALL_DIR%\scripts\runInstaller.mjs" -- --install
+    echo %GREEN%Update completed successfully!%RESET%
 )
-echo   [OK] Private MallCord removed from Discord.
-
-echo.
-choice /C YN /M "   Also delete the Private MallCord folder at %INSTALL_DIR%"
-set DEL_CHOICE=!errorlevel!
-echo.
-if !DEL_CHOICE! equ 1 (
-    echo   Deleting %INSTALL_DIR%...
-    rmdir /s /q "%INSTALL_DIR%"
-    echo   [OK] Folder deleted.
-) else (
-    echo   Kept folder — run this script again to reinstall.
-)
-
-echo.
-echo   ============================================
-echo     Private MallCord uninstalled. Restart Discord.
-echo   ============================================
-echo.
+pause
 goto :end
 
-:fail
+:uninstall
+if not exist "%INSTALL_DIR%" (
+    echo %RED%Private MallCord not found.%RESET%
+    pause
+    goto :end
+)
+call :close_discord
+cd /d "%INSTALL_DIR%"
+echo %BLUE%Removing from Discord...%RESET%
+call node "%INSTALL_DIR%\scripts\runInstaller.mjs" -- --uninstall
+
 echo.
-echo   Failed. See errors above.
-echo.
+choice /C YN /M "   Also delete the PrivateMallCord folder?"
+if !errorlevel! equ 1 (
+    cd /d "%USERPROFILE%"
+    rmdir /s /q "%INSTALL_DIR%"
+    echo %GREEN%Folder deleted.%RESET%
+)
+echo %GREEN%Private MallCord uninstalled. Restart Discord.%RESET%
+pause
+goto :end
 
 :end
-pause
 endlocal
